@@ -14,6 +14,7 @@ export function HelpTip({ children }: { children: React.ReactNode }) {
     <Tooltip>
       <TooltipTrigger
         type="button"
+        tabIndex={-1}
         className="text-muted-foreground/70 hover:text-foreground"
         aria-label="Giải thích"
       >

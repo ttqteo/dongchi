@@ -188,8 +188,14 @@ export function ItemizedPanel({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-10">
-      {/* Cột nhập: 4/10 trên desktop */}
-      <div className="space-y-4 lg:col-span-4">
+      {/* Cột nhập: 4/10 trên desktop. Enter trong ô -> Tính tiền */}
+      <form
+        className="space-y-4 lg:col-span-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          calculate();
+        }}
+      >
       {/* 1. Đơn hàng */}
       <Card className="overflow-visible rounded-2xl">
         <CardContent className="space-y-2.5 pt-4">
@@ -343,7 +349,7 @@ export function ItemizedPanel({
         </CardContent>
       </Card>
 
-      </div>
+      </form>
 
       {/* Cột kết quả: 6/10 trên desktop, sticky */}
       <div

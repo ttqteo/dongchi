@@ -8,6 +8,7 @@ import {
   ArrowDownAZ,
   ChevronsUp,
   ChevronsDown,
+  Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,6 +20,7 @@ import { Wheel } from "@/components/wheel/wheel";
 import { WinnerDialog } from "@/components/wheel/winner-dialog";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import { targetRotation } from "@/lib/wheel";
+import { cn } from "@/lib/utils";
 import type { BillRow } from "@/lib/split";
 
 const DEFAULT_TEXT = ["Minh", "An", "Bảo", "Chi"].join("\n");
@@ -50,11 +52,15 @@ function parseMembers(text: string): string[] {
     .slice(0, MAX_MEMBERS);
 }
 
-export function WheelPanel() {
+export function WheelPanel({ importHintKey }: { importHintKey?: number }) {
   const [text, setText] = useLocalStorage("dongchi.wheel.text", DEFAULT_TEXT);
   const [purpose, setPurpose] = useLocalStorage(
     "dongchi.wheel.purpose",
     "đi lấy đồ giúp cả nhóm",
+  );
+  const [spinSeconds, setSpinSeconds] = useLocalStorage(
+    "dongchi.wheel.seconds",
+    4,
   );
 
   const [rotation, setRotation] = React.useState(0);
@@ -67,6 +73,17 @@ export function WheelPanel() {
   const caretRef = React.useRef(0);
   const [limitHit, setLimitHit] = React.useState(false);
   const limitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hintImport, setHintImport] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+
+  // Khi vừa điều hướng từ Chia tiền sang: gợi ý nút "Lấy từ danh sách chia tiền".
+  React.useEffect(() => {
+    if (!importHintKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHintImport(true);
+    const t = setTimeout(() => setHintImport(false), 8000);
+    return () => clearTimeout(t);
+  }, [importHintKey]);
 
   const members = parseMembers(text);
   const canSpin = members.length >= 2 && !spinning;
@@ -79,10 +96,10 @@ export function WheelPanel() {
     const spins = 4 + Math.floor(Math.random() * 4); // 4..7 vòng
     const jitter = (Math.random() - 0.5) * 1.6;
     setWinnerIdx(idx);
-    setDuration(3.6 + Math.random() * 1.8); // 3.6..5.4s
+    setDuration(spinSeconds);
     setSpinning(true);
     setRotation((r) => targetRotation(r, idx, list.length, { spins, jitter }));
-  }, [text, spinning]);
+  }, [text, spinning, spinSeconds]);
 
   // Ctrl/Cmd + Enter để quay nhanh.
   React.useEffect(() => {
@@ -120,6 +137,7 @@ export function WheelPanel() {
       }
       setText(names.join("\n"));
       setRotation(0);
+      setHintImport(false);
       toast.success(`Đã lấy ${names.length} người từ danh sách chia tiền`);
     } catch {
       toast.error("Không đọc được danh sách chia tiền");
@@ -186,9 +204,9 @@ export function WheelPanel() {
   return (
     <div className="grid gap-4 lg:grid-cols-10">
       {/* Wheel: 7/10 */}
-      <Card className="rounded-2xl lg:order-2 lg:col-span-7">
+      <Card className="overflow-visible rounded-2xl lg:order-2 lg:col-span-7">
         <CardContent className="space-y-5 pt-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Label
               htmlFor="purpose"
               className="shrink-0 whitespace-nowrap text-sm font-medium"
@@ -202,6 +220,49 @@ export function WheelPanel() {
               placeholder="VD: đi lấy đồ, mua cà phê, làm nhiệm vụ…"
               className="h-11 flex-1 rounded-xl"
             />
+            <div className="relative shrink-0">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cài đặt vòng quay"
+                className="size-11 rounded-xl"
+                onClick={() => setSettingsOpen((o) => !o)}
+              >
+                <Settings2 className="size-5" />
+              </Button>
+              {settingsOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-20"
+                    onClick={() => setSettingsOpen(false)}
+                  />
+                  <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border bg-popover p-3 shadow-lg">
+                    <div className="mb-2 flex items-center justify-between text-sm font-medium">
+                      <span>Thời gian quay</span>
+                      <span className="tabular-nums text-primary">
+                        {spinSeconds}s
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={2}
+                      max={12}
+                      step={0.5}
+                      value={spinSeconds}
+                      disabled={spinning}
+                      onChange={(e) => setSpinSeconds(Number(e.target.value))}
+                      className="h-1.5 w-full cursor-pointer accent-primary"
+                      aria-label="Thời gian quay (giây)"
+                    />
+                    <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+                      <span>2s</span>
+                      <span>12s</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <Wheel
@@ -331,15 +392,26 @@ export function WheelPanel() {
             </p>
           )}
 
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 w-full rounded-xl"
-            onClick={importFromBill}
-          >
-            <Import className="size-4" />
-            Lấy từ danh sách chia tiền
-          </Button>
+          <div className="relative">
+            {hintImport && (
+              <span className="pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 -translate-y-full animate-bounce whitespace-nowrap rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-md">
+                Lấy danh sách vừa chia ở đây
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-10 w-full rounded-xl",
+                hintImport &&
+                  "animate-pulse border-primary text-primary ring-2 ring-primary ring-offset-2",
+              )}
+              onClick={importFromBill}
+            >
+              <Import className="size-4" />
+              Lấy từ danh sách chia tiền
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

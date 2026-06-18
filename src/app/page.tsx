@@ -16,6 +16,8 @@ export default function HomePage() {
   // Trang là static nên không biết ?tab khi render lần đầu. Ẩn vùng tab đến khi
   // đọc xong URL rồi mới hiện đúng tab, tránh flash từ Chia tiền sang Quay số.
   const [resolved, setResolved] = React.useState(false);
+  // Tăng mỗi lần điều hướng từ Chia tiền sang Quay số để gợi ý nút "Lấy danh sách".
+  const [importHintKey, setImportHintKey] = React.useState(0);
 
   React.useEffect(() => {
     const param = new URLSearchParams(window.location.search).get("tab");
@@ -61,12 +63,13 @@ export default function HomePage() {
             <SplitBillPanel
               onGoToWheel={() => {
                 handleTab("quay-so");
+                setImportHintKey((k) => k + 1);
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
             />
           </TabsContent>
           <TabsContent value="quay-so" keepMounted className="mt-5">
-            <WheelPanel />
+            <WheelPanel importHintKey={importHintKey} />
           </TabsContent>
         </Tabs>
       ) : (
