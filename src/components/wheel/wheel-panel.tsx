@@ -1,58 +1,88 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X, RotateCcw, Sparkles, Undo2, Import } from "lucide-react";
+import {
+  RotateCcw,
+  Import,
+  Shuffle,
+  ArrowDownAZ,
+  ChevronsUp,
+  ChevronsDown,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Wheel } from "@/components/wheel/wheel";
 import { WinnerDialog } from "@/components/wheel/winner-dialog";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import { targetRotation } from "@/lib/wheel";
-import { cn } from "@/lib/utils";
 import type { BillRow } from "@/lib/split";
 
-const DEFAULT_MEMBERS = ["Minh", "An", "Bảo", "Chi"];
+const DEFAULT_TEXT = ["Minh", "An", "Bảo", "Chi"].join("\n");
+
+const MAX_MEMBERS = 200;
+
+/**
+ * Dưới trần: giữ nguyên (cho phép dòng trống để Enter/chèn ở giữa).
+ * Đủ/vượt trần: bỏ sạch dòng trống và giữ đúng MAX_MEMBERS tên liền mạch
+ * -> không thể Enter/chèn thêm ở bất kỳ đâu khi đã đủ 200.
+ */
+function clampText(value: string): string {
+  const lines = value.split(/\r?\n/);
+  const nameCount = lines.filter((l) => l.trim() !== "").length;
+  if (nameCount < MAX_MEMBERS) return value;
+
+  const names: string[] = [];
+  for (const line of lines) {
+    if (line.trim() !== "" && names.length < MAX_MEMBERS) names.push(line);
+  }
+  return names.join("\n");
+}
+
+function parseMembers(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, MAX_MEMBERS);
+}
 
 export function WheelPanel() {
-  const [members, setMembers, hydrated] = useLocalStorage<string[]>(
-    "dongchi.wheel.members",
-    DEFAULT_MEMBERS,
-  );
-  const [eliminated, setEliminated] = useLocalStorage<string[]>(
-    "dongchi.wheel.eliminated",
-    [],
-  );
-  const [eliminateMode, setEliminateMode] = useLocalStorage(
-    "dongchi.wheel.eliminateMode",
-    false,
-  );
+  const [text, setText] = useLocalStorage("dongchi.wheel.text", DEFAULT_TEXT);
   const [purpose, setPurpose] = useLocalStorage(
     "dongchi.wheel.purpose",
     "đi lấy đồ giúp cả nhóm",
   );
 
-  const [draft, setDraft] = React.useState("");
-  const [draftFocused, setDraftFocused] = React.useState(false);
-  const [billNames, setBillNames] = React.useState<string[]>([]);
   const [rotation, setRotation] = React.useState(0);
   const [spinning, setSpinning] = React.useState(false);
+  const [duration, setDuration] = React.useState(4);
   const [winnerIdx, setWinnerIdx] = React.useState<number | null>(null);
   const [showWinner, setShowWinner] = React.useState(false);
+  const gutterRef = React.useRef<HTMLDivElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const caretRef = React.useRef(0);
+  const [limitHit, setLimitHit] = React.useState(false);
+  const limitTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const members = parseMembers(text);
   const canSpin = members.length >= 2 && !spinning;
+  const lineCount = text.split(/\r?\n/).length;
 
   const spin = React.useCallback(() => {
-    if (members.length < 2 || spinning) return;
-    const idx = Math.floor(Math.random() * members.length);
+    const list = parseMembers(text);
+    if (list.length < 2 || spinning) return;
+    const idx = Math.floor(Math.random() * list.length);
+    const spins = 4 + Math.floor(Math.random() * 4); // 4..7 vòng
+    const jitter = (Math.random() - 0.5) * 1.6;
     setWinnerIdx(idx);
+    setDuration(3.6 + Math.random() * 1.8); // 3.6..5.4s
     setSpinning(true);
-    setRotation((r) => targetRotation(r, idx, members.length));
-  }, [members.length, spinning]);
+    setRotation((r) => targetRotation(r, idx, list.length, { spins, jitter }));
+  }, [text, spinning]);
 
   // Ctrl/Cmd + Enter để quay nhanh.
   React.useEffect(() => {
@@ -66,48 +96,6 @@ export function WheelPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [spin]);
 
-  // Đọc tên từ danh sách chia tiền (Theo món) để gợi ý, không ghi đè.
-  function loadBillNames() {
-    try {
-      const raw = window.localStorage.getItem("dongchi.itemized.rows");
-      const rows = raw ? (JSON.parse(raw) as BillRow[]) : [];
-      setBillNames([...new Set(rows.map((r) => r.name.trim()).filter(Boolean))]);
-    } catch {
-      setBillNames([]);
-    }
-  }
-
-  const taken = new Set([...members, ...eliminated].map((s) => s.toLowerCase()));
-  const query = draft.trim().toLowerCase();
-  const suggestions = billNames
-    .filter(
-      (n) =>
-        !taken.has(n.toLowerCase()) &&
-        (query === "" || n.toLowerCase().includes(query)),
-    )
-    .slice(0, 6);
-  const showSuggest = draftFocused && suggestions.length > 0;
-
-  function addName(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    if (taken.has(trimmed.toLowerCase())) {
-      toast.error("Tên này đã có trong danh sách");
-      return;
-    }
-    setMembers((m) => [...m, trimmed]);
-    setDraft("");
-  }
-
-  function addMember(e?: React.FormEvent) {
-    e?.preventDefault();
-    addName(draft);
-  }
-
-  function removeMember(name: string) {
-    setMembers((m) => m.filter((x) => x !== name));
-  }
-
   function handleSpinEnd() {
     setSpinning(false);
     setShowWinner(true);
@@ -116,20 +104,9 @@ export function WheelPanel() {
   function handleEliminate() {
     if (winnerIdx === null) return;
     const name = members[winnerIdx];
-    setMembers((m) => m.filter((_, i) => i !== winnerIdx));
-    setEliminated((e) => [...e, name]);
-    setShowWinner(false);
-  }
-
-  function restoreAll() {
-    setMembers((m) => [...m, ...eliminated]);
-    setEliminated([]);
-  }
-
-  function resetAll() {
-    setMembers(DEFAULT_MEMBERS);
-    setEliminated([]);
+    setText((t) => parseMembers(t).filter((n) => n !== name).join("\n"));
     setRotation(0);
+    setShowWinner(false);
   }
 
   function importFromBill() {
@@ -141,8 +118,7 @@ export function WheelPanel() {
         toast.error("Danh sách chia tiền chưa có tên nào");
         return;
       }
-      setMembers(names);
-      setEliminated([]);
+      setText(names.join("\n"));
       setRotation(0);
       toast.success(`Đã lấy ${names.length} người từ danh sách chia tiền`);
     } catch {
@@ -150,19 +126,73 @@ export function WheelPanel() {
     }
   }
 
-  const winnerName = winnerIdx !== null ? members[winnerIdx] : "";
+  function shuffle() {
+    const arr = parseMembers(text);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    setText(arr.join("\n"));
+  }
+
+  function sortAZ() {
+    setText(
+      parseMembers(text)
+        .sort((a, b) => a.localeCompare(b, "vi"))
+        .join("\n"),
+    );
+  }
+
+  function resetAll() {
+    setText(DEFAULT_TEXT);
+    setRotation(0);
+  }
+
+  function scrollList(to: "top" | "bottom") {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.scrollTo({
+      top: to === "top" ? 0 : el.scrollHeight,
+      behavior: "smooth",
+    });
+  }
+
+  function handleTextChange(value: string) {
+    const clamped = clampText(value);
+    const changed = clamped !== value;
+    // Chỉ cảnh báo khi đã chạm trần mà text vẫn bị cắt (gõ/Enter thêm bị chặn).
+    const blockedAtCap = changed && parseMembers(clamped).length >= MAX_MEMBERS;
+    if (blockedAtCap) {
+      toast.warning(`Đã đủ ${MAX_MEMBERS} người, không thể thêm.`);
+      setLimitHit(true);
+      if (limitTimer.current) clearTimeout(limitTimer.current);
+      limitTimer.current = setTimeout(() => setLimitHit(false), 1800);
+    }
+    // clamped có thể trùng state hiện tại -> setText không re-render -> ép DOM revert.
+    // Khôi phục con trỏ về đúng chỗ đang gõ (tránh nhảy về cuối).
+    if (changed && textareaRef.current) {
+      const el = textareaRef.current;
+      const pos = Math.min(caretRef.current, clamped.length);
+      el.value = clamped;
+      el.setSelectionRange(pos, pos);
+      requestAnimationFrame(() => el.setSelectionRange(pos, pos));
+    }
+    setText(clamped);
+  }
+
+  const winnerName = winnerIdx !== null ? (members[winnerIdx] ?? "") : "";
 
   return (
-    <div
-      className={cn(
-        "grid items-start gap-4 transition-all duration-300 lg:grid-cols-10",
-        hydrated ? "opacity-100" : "translate-y-1 opacity-0",
-      )}
-    >
+    <div className="grid gap-4 lg:grid-cols-10">
+      {/* Wheel: 7/10 */}
       <Card className="rounded-2xl lg:order-2 lg:col-span-7">
         <CardContent className="space-y-5 pt-6">
-          <div className="space-y-2">
-            <Label htmlFor="purpose" className="text-sm font-medium">
+          <div className="flex items-center gap-3">
+            <Label
+              htmlFor="purpose"
+              className="shrink-0 whitespace-nowrap text-sm font-medium"
+            >
               Quay để chọn người…
             </Label>
             <Input
@@ -170,7 +200,7 @@ export function WheelPanel() {
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
               placeholder="VD: đi lấy đồ, mua cà phê, làm nhiệm vụ…"
-              className="h-11 rounded-xl"
+              className="h-11 flex-1 rounded-xl"
             />
           </div>
 
@@ -178,92 +208,128 @@ export function WheelPanel() {
             members={members}
             rotation={rotation}
             spinning={spinning}
+            duration={duration}
             canSpin={canSpin}
             onSpin={spin}
             onSpinEnd={handleSpinEnd}
           />
 
-          <Button
-            size="lg"
-            className="h-14 w-full rounded-2xl text-base font-semibold"
-            disabled={!canSpin}
-            onClick={spin}
-          >
-            <Sparkles className="size-5" />
-            {spinning ? "Đang quay…" : "Quay ngay"}
-          </Button>
-          {members.length < 2 && (
-            <p className="text-center text-xs text-muted-foreground">
-              Cần ít nhất 2 thành viên để quay.
-            </p>
-          )}
+          <p className="text-center text-sm text-muted-foreground">
+            {members.length < 2
+              ? "Cần ít nhất 2 thành viên để quay."
+              : spinning
+                ? "Đang quay…"
+                : "Click vào vòng quay để quay (hoặc Ctrl/Cmd + Enter)."}
+          </p>
         </CardContent>
       </Card>
 
-      <Card className="overflow-visible rounded-2xl lg:order-1 lg:col-span-3">
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">
+      {/* Danh sách: 3/10 */}
+      <Card className="rounded-2xl lg:order-1 lg:col-span-3">
+        <CardContent className="flex flex-1 flex-col gap-3 pt-6">
+          <div className="flex items-center justify-between gap-1">
+            <Label className="shrink-0 text-sm font-medium">
               Thành viên ({members.length})
             </Label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 rounded-lg text-muted-foreground"
-              onClick={resetAll}
-            >
-              <RotateCcw className="size-4" />
-              Đặt lại
-            </Button>
+            <div className="flex items-center gap-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-muted-foreground"
+                onClick={shuffle}
+                disabled={members.length < 2}
+              >
+                <Shuffle className="size-4" />
+                Xáo trộn
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-muted-foreground"
+                onClick={sortAZ}
+                disabled={members.length < 2}
+              >
+                <ArrowDownAZ className="size-4" />
+                A-Z
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Đặt lại danh sách"
+                title="Đặt lại danh sách"
+                className="size-8 rounded-lg text-muted-foreground/70 hover:text-destructive"
+                onClick={resetAll}
+              >
+                <RotateCcw className="size-4" />
+              </Button>
+            </div>
           </div>
 
-          <form onSubmit={addMember} className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onFocus={() => {
-                  setDraftFocused(true);
-                  loadBillNames();
-                }}
-                onBlur={() => setTimeout(() => setDraftFocused(false), 120)}
-                placeholder="Thêm tên thành viên…"
-                className="h-11 rounded-xl"
-              />
-              {showSuggest && (
-                <ul className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border bg-popover py-1 shadow-lg">
-                  <li className="px-3 pb-1 pt-0.5 text-[11px] font-medium uppercase text-muted-foreground">
-                    Từ danh sách chia tiền
-                  </li>
-                  {suggestions.map((name) => (
-                    <li key={name}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          addName(name);
-                        }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
-                      >
-                        <Plus className="size-3.5 text-muted-foreground" />
-                        {name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <Button
-              type="submit"
-              size="icon"
-              className="size-11 shrink-0 rounded-xl"
-              aria-label="Thêm thành viên"
+          <div className="relative flex min-h-60 flex-1 overflow-hidden rounded-xl border focus-within:ring-2 focus-within:ring-ring/50">
+            {limitHit && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
+                <div className="mt-2 animate-in fade-in slide-in-from-top-1 rounded-lg bg-destructive px-3 py-1 text-xs font-medium text-white shadow-md">
+                  Đã đủ {MAX_MEMBERS} người, không thể thêm
+                </div>
+              </div>
+            )}
+            {/* Gutter STT, đồng bộ scroll với textarea */}
+            <div
+              ref={gutterRef}
+              aria-hidden
+              className="pointer-events-none absolute left-0 top-0 w-9 select-none py-3 pr-2 text-right text-sm leading-7 text-muted-foreground/40"
             >
-              <Plus className="size-5" />
-            </Button>
-          </form>
+              {Array.from({ length: lineCount }, (_, i) => (
+                <div key={i} className="tabular-nums">
+                  {i + 1}
+                </div>
+              ))}
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onKeyDown={(e) => {
+                caretRef.current = e.currentTarget.selectionStart ?? 0;
+              }}
+              onChange={(e) => handleTextChange(e.target.value)}
+              onScroll={(e) => {
+                if (gutterRef.current) {
+                  gutterRef.current.style.transform = `translateY(${-e.currentTarget.scrollTop}px)`;
+                }
+              }}
+              rows={10}
+              placeholder={"Minh\nAn\nBảo"}
+              className="size-full resize-none bg-transparent py-3 pl-11 pr-3 text-sm leading-7 outline-none"
+            />
+            {lineCount > 12 && (
+              <div className="absolute bottom-2 right-3 z-10 flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => scrollList("top")}
+                  aria-label="Lên đầu danh sách"
+                  className="flex size-7 items-center justify-center rounded-md border bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+                >
+                  <ChevronsUp className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollList("bottom")}
+                  aria-label="Xuống cuối danh sách"
+                  className="flex size-7 items-center justify-center rounded-md border bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground"
+                >
+                  <ChevronsDown className="size-4" />
+                </button>
+              </div>
+            )}
+          </div>
+          {members.length >= MAX_MEMBERS && (
+            <p className="text-xs font-medium text-amber-600 dark:text-amber-500">
+              Đã đủ {MAX_MEMBERS} người, không thể thêm.
+            </p>
+          )}
 
           <Button
             type="button"
@@ -274,75 +340,6 @@ export function WheelPanel() {
             <Import className="size-4" />
             Lấy từ danh sách chia tiền
           </Button>
-
-          {members.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {members.map((name) => (
-                <Badge
-                  key={name}
-                  variant="secondary"
-                  className="gap-1 rounded-lg py-1.5 pl-3 pr-1.5 text-sm font-medium"
-                >
-                  {name}
-                  <button
-                    type="button"
-                    aria-label={`Xóa ${name}`}
-                    onClick={() => removeMember(name)}
-                    className="rounded-md p-0.5 hover:bg-foreground/10"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Chưa có thành viên nào. Thêm tên để bắt đầu quay.
-            </p>
-          )}
-
-          {eliminated.length > 0 && (
-            <div className="space-y-2 rounded-xl bg-muted/40 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Đã được chọn ({eliminated.length})
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 rounded-lg text-xs"
-                  onClick={restoreAll}
-                >
-                  <Undo2 className="size-3.5" />
-                  Khôi phục
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {eliminated.map((name) => (
-                  <Badge
-                    key={name}
-                    variant="outline"
-                    className="rounded-lg text-xs text-muted-foreground line-through"
-                  >
-                    {name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={eliminateMode}
-              onChange={(e) => setEliminateMode(e.target.checked)}
-              className="size-4 accent-primary"
-            />
-            <span className="text-muted-foreground">
-              Loại người đã được chọn ra khỏi vòng sau
-            </span>
-          </label>
         </CardContent>
       </Card>
 
@@ -351,7 +348,6 @@ export function WheelPanel() {
         onOpenChange={setShowWinner}
         name={winnerName}
         purpose={purpose}
-        eliminateMode={eliminateMode}
         onEliminate={handleEliminate}
       />
     </div>

@@ -57,10 +57,15 @@ export default function HomePage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="chia-tien" className="mt-5">
-            <SplitBillPanel />
+          <TabsContent value="chia-tien" keepMounted className="mt-5">
+            <SplitBillPanel
+              onGoToWheel={() => {
+                handleTab("quay-so");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
           </TabsContent>
-          <TabsContent value="quay-so" className="mt-5">
+          <TabsContent value="quay-so" keepMounted className="mt-5">
             <WheelPanel />
           </TabsContent>
         </Tabs>

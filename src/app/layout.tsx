@@ -46,12 +46,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider>
+          <TooltipProvider delay={0} closeDelay={0}>
             <Header />
             <main className="flex-1">{children}</main>
             <Footer />
           </TooltipProvider>
-          <Toaster />
+          <Toaster richColors />
         </ThemeProvider>
       </body>
     </html>

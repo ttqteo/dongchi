@@ -41,19 +41,24 @@ export function slicePath(
 
 /**
  * Tính góc quay cuối cùng (luôn tăng để quay tới) sao cho nan `winner`
- * dừng đúng ở đỉnh, sau ít nhất `minSpins` vòng.
+ * dừng trong vùng kim chỉ ở đỉnh, sau `spins` vòng.
+ *
+ * - `spins`: số vòng quay trọn (ngẫu nhiên để mỗi lần khác nhau).
+ * - `jitter`: lệch trong nan, khoảng [-1, 1] (0 = chính giữa, ±1 = sát mép),
+ *   để kim không phải lúc nào cũng dừng đúng tâm nan.
  */
 export function targetRotation(
   current: number,
   winner: number,
   total: number,
-  minSpins = 5,
+  { spins = 5, jitter = 0 }: { spins?: number; jitter?: number } = {},
 ): number {
   const seg = 360 / total;
-  const center = winner * seg + seg / 2;
-  const targetMod = (360 - center) % 360;
+  const offset = jitter * (seg / 2) * 0.8;
+  const center = winner * seg + seg / 2 + offset;
+  const targetMod = (((360 - center) % 360) + 360) % 360;
   const currentMod = ((current % 360) + 360) % 360;
   let delta = targetMod - currentMod;
   if (delta <= 0) delta += 360;
-  return current + minSpins * 360 + delta;
+  return current + Math.max(1, Math.round(spins)) * 360 + delta;
 }

@@ -17,7 +17,6 @@ interface WinnerDialogProps {
   onOpenChange: (open: boolean) => void;
   name: string;
   purpose: string;
-  eliminateMode: boolean;
   onEliminate: () => void;
 }
 
@@ -26,7 +25,6 @@ export function WinnerDialog({
   onOpenChange,
   name,
   purpose,
-  eliminateMode,
   onEliminate,
 }: WinnerDialogProps) {
   return (
@@ -36,9 +34,9 @@ export function WinnerDialog({
           <div className="mb-2 flex size-16 items-center justify-center rounded-full bg-primary/10">
             <PartyPopper className="size-8 text-primary" />
           </div>
-          <DialogTitle className="text-2xl">Tèng tèng!</DialogTitle>
+          <DialogTitle className="text-2xl">Chúc mừng</DialogTitle>
           <DialogDescription className="text-base">
-            Cả nhóm đã chốt, người được gọi tên là
+            Người may mắn nhất hôm nay là
           </DialogDescription>
         </DialogHeader>
 
@@ -51,24 +49,19 @@ export function WinnerDialog({
           </p>
         )}
 
-        <DialogFooter className="mt-2 flex-col gap-2 sm:flex-col">
+        <DialogFooter className="mt-2 flex-row justify-end gap-2">
           <Button
-            className="w-full rounded-xl"
-            onClick={() => onOpenChange(false)}
+            variant="outline"
+            className="rounded-xl"
+            onClick={onEliminate}
           >
+            <UserMinus className="size-4" />
+            Loại {name}
+          </Button>
+          <Button className="rounded-xl" onClick={() => onOpenChange(false)}>
             <RotateCcw className="size-4" />
             Quay lại
           </Button>
-          {eliminateMode && (
-            <Button
-              variant="outline"
-              className="w-full rounded-xl"
-              onClick={onEliminate}
-            >
-              <UserMinus className="size-4" />
-              Loại {name} & quay tiếp
-            </Button>
-          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -13,6 +13,7 @@ interface WheelProps {
   members: string[];
   rotation: number;
   spinning: boolean;
+  duration: number;
   canSpin: boolean;
   onSpin: () => void;
   onSpinEnd: () => void;
@@ -22,12 +23,17 @@ export function Wheel({
   members,
   rotation,
   spinning,
+  duration,
   canSpin,
   onSpin,
   onSpinEnd,
 }: WheelProps) {
   const n = members.length;
   const seg = n > 0 ? 360 / n : 360;
+  // Font co theo độ rộng cung ở vành để khi đông chữ không chồng nhau.
+  const fontSize =
+    n > 0 ? Math.max(3, Math.min(13, ((2 * Math.PI * R) / n) * 0.6)) : 13;
+  const maxChars = n > 40 ? 8 : n > 20 ? 10 : 14;
 
   return (
     <div className="mx-auto aspect-square w-full max-w-md lg:max-w-xl">
@@ -53,7 +59,10 @@ export function Wheel({
           className="size-full drop-shadow-xl"
           style={{ transformOrigin: "50% 50%" }}
           animate={{ rotate: rotation }}
-          transition={{ duration: spinning ? 4 : 0, ease: [0.16, 1, 0.3, 1] }}
+          transition={{
+            duration: spinning ? duration : 0,
+            ease: [0.16, 1, 0.3, 1],
+          }}
           onAnimationComplete={() => {
             if (spinning) onSpinEnd();
           }}
@@ -77,33 +86,35 @@ export function Wheel({
                 const a0 = i * seg;
                 const a1 = (i + 1) * seg;
                 const mid = a0 + seg / 2;
-                // Chữ chạy dọc theo bán kính, từ tâm ra rìa (kiểu wheelofnames).
-                const [tx, ty] = pointOnCircle(C, C, R * 0.3, mid);
+                // Neo chữ ở sát vành rồi kéo vào trong (kiểu wheelofnames):
+                // khi đông, chữ nằm ở vòng ngoài (cung rộng) nên ít chồng nhau.
+                const [tx, ty] = pointOnCircle(C, C, R * 0.94, mid);
                 return (
                   <g key={`${name}-${i}`}>
                     <path
                       d={slicePath(C, C, R, a0, a1)}
                       fill={wheelColor(i)}
-                      stroke="white"
-                      strokeWidth={2}
+                      stroke={wheelColor(i)}
+                      strokeWidth={0.5}
+                      shapeRendering="geometricPrecision"
                     />
                     <text
                       x={tx}
                       y={ty}
                       fill="white"
-                      fontSize={n > 12 ? 10 : n > 8 ? 12 : 14}
+                      fontSize={fontSize}
                       fontWeight={700}
-                      textAnchor="start"
+                      textAnchor="end"
                       dominantBaseline="middle"
                       transform={`rotate(${mid - 90}, ${tx}, ${ty})`}
                       style={{
                         pointerEvents: "none",
                         paintOrder: "stroke",
-                        stroke: "rgba(0,0,0,0.22)",
-                        strokeWidth: 2.5,
+                        stroke: "rgba(0,0,0,0.25)",
+                        strokeWidth: Math.max(0.8, fontSize * 0.16),
                       }}
                     >
-                      {truncate(name, n > 8 ? 9 : 12)}
+                      {truncate(name, maxChars)}
                     </text>
                   </g>
                 );

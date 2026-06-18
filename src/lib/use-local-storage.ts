@@ -3,37 +3,31 @@
 import * as React from "react";
 
 /**
- * State được đồng bộ với localStorage. Trả về giá trị mặc định trên server
- * và lần render đầu (tránh hydration mismatch), sau đó nạp giá trị đã lưu.
+ * State đồng bộ với localStorage. Đọc giá trị đã lưu NGAY ở lần render đầu
+ * (chỉ chạy phía client) nên không bị "nháy" từ giá trị mặc định sang giá trị
+ * đã lưu. Các component dùng hook này chỉ render sau khi trang đã mount.
  */
 export function useLocalStorage<T>(
   key: string,
   initialValue: T,
-): [T, React.Dispatch<React.SetStateAction<T>>, boolean] {
-  const [value, setValue] = React.useState<T>(initialValue);
-  const [hydrated, setHydrated] = React.useState(false);
-
-  // Đồng bộ một chiều từ localStorage (external store) vào React khi mount.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  React.useEffect(() => {
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = React.useState<T>(() => {
+    if (typeof window === "undefined") return initialValue;
     try {
       const stored = window.localStorage.getItem(key);
-      if (stored !== null) setValue(JSON.parse(stored) as T);
+      return stored !== null ? (JSON.parse(stored) as T) : initialValue;
     } catch {
-      // bỏ qua lỗi đọc localStorage
+      return initialValue;
     }
-    setHydrated(true);
-  }, [key]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  });
 
   React.useEffect(() => {
-    if (!hydrated) return;
     try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {
       // bỏ qua lỗi ghi localStorage
     }
-  }, [key, value, hydrated]);
+  }, [key, value]);
 
-  return [value, setValue, hydrated];
+  return [value, setValue];
 }

@@ -9,17 +9,26 @@ import {
   CopyPlus,
   Calculator,
   Tag,
-  FileSpreadsheet,
+  ClipboardPaste,
+  Disc3,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/shared/money-input";
 import { HelpTip } from "@/components/shared/help-tip";
-import { SectionNote } from "@/components/split-bill/section-note";
 import { useLocalStorage } from "@/lib/use-local-storage";
 import {
   splitItemized,
@@ -47,10 +56,12 @@ const newRow = (price = 0): BillRow => ({ id: makeId(), name: "", price });
 
 export function ItemizedPanel({
   headerAction,
+  onGoToWheel,
 }: {
   headerAction?: React.ReactNode;
+  onGoToWheel?: () => void;
 }) {
-  const [rows, setRows, hydrated] = useLocalStorage<BillRow[]>(
+  const [rows, setRows] = useLocalStorage<BillRow[]>(
     "dongchi.itemized.rows",
     SAMPLE_ROWS,
   );
@@ -61,7 +72,11 @@ export function ItemizedPanel({
   );
 
   const [result, setResult] = React.useState<ItemizedResult | null>(null);
+  const [calculating, setCalculating] = React.useState(false);
   const resultRef = React.useRef<HTMLDivElement>(null);
+
+  const [importOpen, setImportOpen] = React.useState(false);
+  const [importText, setImportText] = React.useState("");
 
   // Số người THẬT: gộp các dòng trùng tên. Phí/KM luôn chia đều cho con số này
   // để tổng thu khớp với số tiền đã nhập.
@@ -92,24 +107,64 @@ export function ItemizedPanel({
     setResult(null);
   }
 
+  function openImport() {
+    // Điền sẵn danh sách hiện tại để chỉnh trực tiếp dạng text.
+    const text = rows
+      .filter((r) => r.name.trim() !== "" || r.price > 0)
+      .map((r) => `${r.name.trim()},${r.price > 0 ? r.price : ""}`)
+      .join("\n");
+    setImportText(text);
+    setImportOpen(true);
+  }
+
+  function doImport() {
+    // Mỗi dòng: "Tên,SốTiền" (ngăn bằng dấu phẩy, tab hoặc chấm phẩy).
+    const parsed = importText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const m = line.split(/[,;\t]/);
+        const name = (m[0] ?? "").trim();
+        const price = m[1] ? parseInt(m[1].replace(/[^\d]/g, ""), 10) || 0 : 0;
+        return { id: makeId(), name, price };
+      })
+      .filter((r) => r.name !== "" || r.price > 0);
+
+    if (parsed.length === 0) {
+      toast.error("Chưa nhận ra dòng nào. Định dạng: Tên,SốTiền");
+      return;
+    }
+    setRows(parsed);
+    setResult(null);
+    setImportOpen(false);
+    setImportText("");
+    toast.success(`Đã nhập ${parsed.length} người`);
+  }
+
   function calculate() {
     const r = splitItemized(rows, fee, discount, divisor);
     if (!r) {
       toast.error("Hãy nhập ít nhất một người kèm số tiền");
       return;
     }
-    setResult(r);
-    // Trên mobile: cuộn xuống bảng kết quả; desktop đã hiện sẵn bên phải.
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setTimeout(
-        () =>
-          resultRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          }),
-        50,
-      );
-    }
+    // Giả lập một nhịp "đang tính" cho cảm giác có xử lý.
+    setCalculating(true);
+    window.setTimeout(() => {
+      setResult(r);
+      setCalculating(false);
+      // Trên mobile: cuộn xuống bảng kết quả; desktop đã hiện sẵn bên phải.
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        window.setTimeout(
+          () =>
+            resultRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            }),
+          50,
+        );
+      }
+    }, 200);
   }
 
   function copyToClipboard(text: string, ok: string) {
@@ -131,59 +186,48 @@ export function ItemizedPanel({
     );
   }
 
-  function copyCsv() {
-    if (!result) return;
-    const head = ["Tên", "Giá", "Phí", "Khuyến mãi", "Thành tiền"];
-    const body = result.lines.map((l) =>
-      [l.name, l.price, l.feeShare, l.discountShare, l.total].join(","),
-    );
-    const total = [
-      "Tổng",
-      result.totals.price,
-      result.totals.feeShare,
-      result.totals.discountShare,
-      result.totals.total,
-    ].join(",");
-    copyToClipboard(
-      [head.join(","), ...body, total].join("\n"),
-      "Đã sao chép CSV, dán vào Excel / Sheets",
-    );
-  }
-
   return (
-    <div
-      className={cn(
-        "grid items-start gap-4 transition-opacity duration-300 lg:grid-cols-10",
-        hydrated ? "opacity-100" : "opacity-0",
-      )}
-    >
+    <div className="grid items-start gap-4 lg:grid-cols-10">
       {/* Cột nhập: 4/10 trên desktop */}
       <div className="space-y-4 lg:col-span-4">
       {/* 1. Đơn hàng */}
       <Card className="overflow-visible rounded-2xl">
         <CardContent className="space-y-2.5 pt-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">
-              <span className="text-primary">1.</span> Ai gọi món gì?
+            <h2 className="flex items-center gap-1.5 font-semibold">
+              <span>
+                <span className="text-primary">1.</span> Ai gọi món gì?
+              </span>
+              <HelpTip>
+                Mỗi dòng là một người. Nhập tên và số tiền người đó cần trả.
+                Người trùng tên sẽ được gộp thành một.
+              </HelpTip>
             </h2>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               {headerAction}
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                className="h-9 rounded-lg text-muted-foreground"
+                size="icon"
+                aria-label="Đặt lại danh sách"
+                title="Đặt lại danh sách"
+                className="size-9 rounded-lg text-muted-foreground/70 hover:text-destructive"
                 onClick={resetAll}
               >
                 <RotateCcw className="size-4" />
-                Đặt lại
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-9 rounded-lg"
+                onClick={openImport}
+              >
+                <ClipboardPaste className="size-4" />
+                Nhập
               </Button>
             </div>
           </div>
-
-          <SectionNote>
-            Mỗi dòng là một người. Nhập tên và số tiền người đó cần trả.
-          </SectionNote>
 
           <div className="space-y-1.5">
             {rows.map((row, i) => (
@@ -229,7 +273,7 @@ export function ItemizedPanel({
               onClick={addRow}
             >
               <Plus className="size-4" />
-              Thêm người
+              Thêm dòng
             </Button>
             <Button
               type="button"
@@ -247,22 +291,22 @@ export function ItemizedPanel({
       {/* 2. Phí & khuyến mãi */}
       <Card className="overflow-visible rounded-2xl">
         <CardContent className="space-y-2.5 pt-4">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Tag className="size-4 text-primary" />
-            <span>
-              <span className="text-primary">2.</span> Phí áp dụng & khuyến mãi
-            </span>
-          </h2>
-          <SectionNote>
-            <span className="flex items-center gap-1">
-              Chia đều cho <strong>{divisor}</strong> người trong danh sách.
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <Tag className="size-4 text-primary" />
+              <span>
+                <span className="text-primary">2.</span> Phí áp dụng & khuyến mãi
+              </span>
+            </h2>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              Chia đều cho <strong>{divisor}</strong> người
               <HelpTip>
                 Phí và khuyến mãi được chia đều cho đúng số người trong danh
                 sách (đã gộp người trùng tên). Muốn thêm người chỉ share phí mà
                 không gọi món thì thêm một dòng với 0đ.
               </HelpTip>
             </span>
-          </SectionNote>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -299,15 +343,6 @@ export function ItemizedPanel({
         </CardContent>
       </Card>
 
-      {/* Nút tính */}
-      <Button
-        size="lg"
-        className="h-14 w-full rounded-2xl text-base font-semibold"
-        onClick={calculate}
-      >
-        <Calculator className="size-5" />
-        Tính tiền
-      </Button>
       </div>
 
       {/* Cột kết quả: 6/10 trên desktop, sticky */}
@@ -317,22 +352,54 @@ export function ItemizedPanel({
       >
         <ResultSection
           result={result}
+          calculating={calculating}
+          onCalculate={calculate}
           onCopyText={copyText}
-          onCopyCsv={copyCsv}
+          onGoToWheel={onGoToWheel}
         />
       </div>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="rounded-2xl sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nhập danh sách</DialogTitle>
+            <DialogDescription>
+              Mỗi dòng một người theo dạng <strong>Tên,SốTiền</strong>. Đã điền
+              sẵn danh sách hiện tại, bạn sửa hoặc dán đè rồi bấm Nhập.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            rows={10}
+            autoFocus
+            placeholder={"A,40000\nB,20000\nC,20000"}
+            className="min-h-[55vh] w-full resize-y rounded-xl border bg-transparent p-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          />
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button className="h-11 w-full rounded-xl" onClick={doImport}>
+              <ClipboardPaste className="size-4" />
+              Nhập danh sách
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function ResultSection({
   result,
+  calculating,
+  onCalculate,
   onCopyText,
-  onCopyCsv,
+  onGoToWheel,
 }: {
   result: ItemizedResult | null;
+  calculating: boolean;
+  onCalculate: () => void;
   onCopyText: () => void;
-  onCopyCsv: () => void;
+  onGoToWheel?: () => void;
 }) {
   return (
     <Card className="rounded-2xl">
@@ -344,25 +411,63 @@ function ResultSection({
         {result ? (
           <>
             <ResultBody result={result} />
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <Button className="h-12 rounded-xl" onClick={onCopyText}>
+
+            <div
+              className={cn(
+                "grid gap-2",
+                onGoToWheel ? "grid-cols-3" : "grid-cols-2",
+              )}
+            >
+              <Button
+                className="h-11 rounded-xl font-semibold"
+                disabled={calculating}
+                onClick={onCalculate}
+              >
+                {calculating ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Calculator className="size-4" />
+                )}
+                {calculating ? "Đang tính…" : "Tính lại"}
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-11 rounded-xl"
+                onClick={onCopyText}
+              >
                 <Copy className="size-4" />
                 Sao chép
               </Button>
-              <Button
-                variant="outline"
-                className="h-12 rounded-xl"
-                onClick={onCopyCsv}
-              >
-                <FileSpreadsheet className="size-4" />
-                CSV
-              </Button>
+              {onGoToWheel && (
+                <Button
+                  variant="outline"
+                  className="h-11 rounded-xl border-primary/40 text-primary hover:bg-primary/10 hover:text-primary"
+                  onClick={onGoToWheel}
+                >
+                  <Disc3 className="size-4" />
+                  Quay số
+                </Button>
+              )}
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-sm text-muted-foreground">
-            <Calculator className="size-6 opacity-50" />
-            Nhập đơn hàng rồi bấm <strong>Tính tiền</strong> để xem kết quả.
+          <div className="flex flex-col items-center justify-center gap-4 py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              Nhập đơn hàng bên trái rồi bấm để xem mỗi người phải trả bao nhiêu.
+            </p>
+            <Button
+              size="lg"
+              className="h-12 w-full rounded-xl text-base font-semibold"
+              disabled={calculating}
+              onClick={onCalculate}
+            >
+              {calculating ? (
+                <Loader2 className="size-5 animate-spin" />
+              ) : (
+                <Calculator className="size-5" />
+              )}
+              {calculating ? "Đang tính…" : "Tính tiền"}
+            </Button>
           </div>
         )}
       </CardContent>
@@ -435,16 +540,14 @@ function ResultBody({ result }: { result: ItemizedResult }) {
           <tbody>
             {lines.map((l, i) => (
               <tr key={i} className="border-b border-border/50">
-                <td className="py-2.5 pr-2">
-                  <div className="font-medium">{l.name}</div>
+                <td className="py-2.5 pr-2 font-medium">{l.name}</td>
+                <td className="px-2 py-2.5 text-right tabular-nums">
+                  {d(l.price)}
                   {l.items.length > 1 && (
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-xs font-normal text-muted-foreground">
                       {l.items.map(formatNumber).join(" + ")}
                     </div>
                   )}
-                </td>
-                <td className="px-2 py-2.5 text-right tabular-nums">
-                  {d(l.price)}
                 </td>
                 {hasFee && (
                   <td className="px-2 py-2.5 text-right tabular-nums text-muted-foreground">

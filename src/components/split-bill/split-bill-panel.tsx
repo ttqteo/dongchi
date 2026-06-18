@@ -14,18 +14,23 @@ import {
 import { GrabPanel } from "@/components/split-bill/grab-panel";
 import { ItemizedPanel } from "@/components/split-bill/itemized-panel";
 
-export function SplitBillPanel() {
+export function SplitBillPanel({
+  onGoToWheel,
+}: {
+  onGoToWheel?: () => void;
+}) {
   const [open, setOpen] = React.useState(false);
 
   return (
     <div className="space-y-4">
       <ItemizedPanel
+        onGoToWheel={onGoToWheel}
         headerAction={
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 rounded-lg"
+            className="h-9 rounded-lg border-primary/40 text-primary hover:bg-primary/10 hover:text-primary"
             onClick={() => setOpen(true)}
           >
             <Equal className="size-4" />
