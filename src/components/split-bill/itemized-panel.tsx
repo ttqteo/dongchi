@@ -73,6 +73,8 @@ export function ItemizedPanel({
 
   const [result, setResult] = React.useState<ItemizedResult | null>(null);
   const [calculating, setCalculating] = React.useState(false);
+  const [hintWheel, setHintWheel] = React.useState(false);
+  const hintTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRef = React.useRef<HTMLDivElement>(null);
 
   const [importOpen, setImportOpen] = React.useState(false);
@@ -153,6 +155,12 @@ export function ItemizedPanel({
     window.setTimeout(() => {
       setResult(r);
       setCalculating(false);
+      // Gợi ý sang Quay số sau khi đã có kết quả.
+      if (onGoToWheel) {
+        setHintWheel(true);
+        if (hintTimer.current) clearTimeout(hintTimer.current);
+        hintTimer.current = setTimeout(() => setHintWheel(false), 8000);
+      }
       // Trên mobile: cuộn xuống bảng kết quả; desktop đã hiện sẵn bên phải.
       if (typeof window !== "undefined" && window.innerWidth < 1024) {
         window.setTimeout(
@@ -359,9 +367,17 @@ export function ItemizedPanel({
         <ResultSection
           result={result}
           calculating={calculating}
+          hintWheel={hintWheel}
           onCalculate={calculate}
           onCopyText={copyText}
-          onGoToWheel={onGoToWheel}
+          onGoToWheel={
+            onGoToWheel
+              ? () => {
+                  setHintWheel(false);
+                  onGoToWheel();
+                }
+              : undefined
+          }
         />
       </div>
 
@@ -397,18 +413,20 @@ export function ItemizedPanel({
 function ResultSection({
   result,
   calculating,
+  hintWheel,
   onCalculate,
   onCopyText,
   onGoToWheel,
 }: {
   result: ItemizedResult | null;
   calculating: boolean;
+  hintWheel?: boolean;
   onCalculate: () => void;
   onCopyText: () => void;
   onGoToWheel?: () => void;
 }) {
   return (
-    <Card className="rounded-2xl">
+    <Card className="overflow-visible rounded-2xl">
       <CardContent className="space-y-3 pt-5">
         <h2 className="font-semibold">
           <span className="text-primary">3.</span> Mỗi người cần trả
@@ -445,14 +463,25 @@ function ResultSection({
                 Sao chép
               </Button>
               {onGoToWheel && (
-                <Button
-                  variant="outline"
-                  className="h-11 rounded-xl border-primary/40 text-primary hover:bg-primary/10 hover:text-primary"
-                  onClick={onGoToWheel}
-                >
-                  <Disc3 className="size-4" />
-                  Quay số
-                </Button>
+                <div className="relative">
+                  {hintWheel && (
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 animate-bounce whitespace-nowrap rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground shadow-md">
+                      Quay chọn người trả / đi lấy đồ
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "h-11 w-full rounded-xl border-primary/40 text-primary hover:bg-primary/10 hover:text-primary",
+                      hintWheel &&
+                        "animate-pulse ring-2 ring-primary ring-offset-2",
+                    )}
+                    onClick={onGoToWheel}
+                  >
+                    <Disc3 className="size-4" />
+                    Quay số
+                  </Button>
+                </div>
               )}
             </div>
           </>

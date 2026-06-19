@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Calculator } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -21,7 +22,28 @@ const MULTIPLIERS: { factor: number; label: string }[] = [
   { factor: 1_000_000, label: "triệu" },
 ];
 
-/** Ô nhập tiền: format dấu chấm ngăn nghìn, hậu tố "đ", có gợi ý nhân nghìn. */
+const HAS_OP = /[+\-*/]/;
+
+/** Tính giá trị từ chuỗi (bỏ dấu chấm ngăn nghìn). Trả null nếu không hợp lệ. */
+function calcResult(text: string): number | null {
+  const cleaned = text.replace(/[.\s]/g, "").replace(/[^0-9+\-*/()]/g, "");
+  if (!cleaned) return null;
+  if (!HAS_OP.test(cleaned)) return parseNumber(cleaned);
+  try {
+    const result = Function(`"use strict"; return (${cleaned})`)();
+    if (typeof result === "number" && Number.isFinite(result)) {
+      return Math.max(0, Math.round(result));
+    }
+  } catch {
+    // biểu thức sai cú pháp
+  }
+  return null;
+}
+
+/**
+ * Ô nhập tiền: format dấu chấm ngăn nghìn, hậu tố "đ", gợi ý nhân nghìn.
+ * Bấm "=" để mở ô phép tính, nhập biểu thức (vd 50000+30000) rồi Enter áp dụng.
+ */
 export function MoneyInput({
   value,
   onValueChange,
@@ -34,12 +56,19 @@ export function MoneyInput({
 }: MoneyInputProps) {
   const [focused, setFocused] = React.useState(false);
   const [active, setActive] = React.useState(0);
+  const [calcOpen, setCalcOpen] = React.useState(false);
+  const [calcText, setCalcText] = React.useState("");
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  function closeCalc() {
+    setCalcOpen(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
 
   const display = value > 0 ? formatNumber(value) : "";
 
-  // Chỉ gợi ý khi đang gõ số nhỏ (chưa phải con số đầy đủ).
   const suggestions =
-    suggest && value > 0 && value < 1000
+    suggest && !calcOpen && value > 0 && value < 1000
       ? MULTIPLIERS.map((m) => ({ ...m, amount: value * m.factor }))
       : [];
   const open = focused && suggestions.length > 0;
@@ -49,27 +78,52 @@ export function MoneyInput({
     setFocused(false);
   }
 
+  function openCalc() {
+    setCalcText(value > 0 ? String(value) : "");
+    setCalcOpen(true);
+  }
+
+  function applyCalc() {
+    const r = calcResult(calcText);
+    if (r !== null) onValueChange(r);
+    closeCalc();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "=") {
+      e.preventDefault();
+      openCalc();
+      return;
+    }
     if (open) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setActive((a) => (a + 1) % suggestions.length);
-      } else if (e.key === "ArrowUp") {
+        return;
+      }
+      if (e.key === "ArrowUp") {
         e.preventDefault();
         setActive((a) => (a - 1 + suggestions.length) % suggestions.length);
-      } else if (e.key === "Enter") {
+        return;
+      }
+      if (e.key === "Enter") {
         e.preventDefault();
         pick(suggestions[active].amount);
-      } else if (e.key === "Escape") {
+        return;
+      }
+      if (e.key === "Escape") {
         setFocused(false);
       }
     }
     onKeyDown?.(e);
   }
 
+  const preview = calcOpen ? calcResult(calcText) : null;
+
   return (
     <div className="relative">
       <Input
+        ref={inputRef}
         inputMode="numeric"
         value={display}
         onChange={(e) => {
@@ -81,7 +135,6 @@ export function MoneyInput({
           onFocus?.(e);
         }}
         onBlur={(e) => {
-          // Trễ để cú click vào gợi ý kịp xử lý.
           setTimeout(() => setFocused(false), 120);
           onBlur?.(e);
         }}
@@ -116,6 +169,48 @@ export function MoneyInput({
             </li>
           ))}
         </ul>
+      )}
+
+      {calcOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            onMouseDown={() => closeCalc()}
+          />
+          <div className="absolute bottom-full left-0 right-0 z-40 mb-1 origin-bottom animate-in fade-in zoom-in-95 slide-in-from-bottom-1 rounded-xl border bg-popover p-2 shadow-lg duration-150">
+            <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
+              <Calculator className="size-3.5" />
+              Nhập phép tính, vd 50000+30000
+            </div>
+            <div className="flex items-center gap-1.5 rounded-lg border px-2 focus-within:ring-2 focus-within:ring-ring/50">
+              <span className="select-none text-sm font-semibold text-muted-foreground">
+                =
+              </span>
+              <input
+                autoFocus
+                inputMode="text"
+                value={calcText}
+                onChange={(e) => setCalcText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "=") {
+                    e.preventDefault();
+                    applyCalc();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    closeCalc();
+                  }
+                }}
+                className="flex-1 bg-transparent py-1.5 text-sm outline-none"
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between px-1 text-xs">
+              <span className="text-muted-foreground">Enter để áp dụng</span>
+              <span className="font-semibold text-primary">
+                {preview !== null ? `= ${formatVND(preview)}` : ""}
+              </span>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
